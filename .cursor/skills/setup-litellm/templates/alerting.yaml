@@ -1,0 +1,40 @@
+# Twin of the alerting block in litellm_config.yaml (proxy only loads that file).
+# LiteLLM POSTs Slack-shaped {"text": "..."}. Telegram takes chat_id on the query string.
+# Add a group: new TELEGRAM_CHAT_* + one os.environ line.
+
+general_settings:
+  alerting: ["slack"]
+  alerting_threshold: 300
+  alert_types:
+    - llm_exceptions
+    - llm_too_slow
+    - llm_requests_hanging
+    - db_exceptions
+    - outage_alerts
+    - cooldown_deployment
+  alerting_args:
+    outage_alert_ttl: 60
+    minor_outage_alert_threshold: 5
+    major_outage_alert_threshold: 10
+    max_outage_alert_list_size: 10
+    log_to_console: false
+  alert_type_config:
+    llm_requests_hanging:
+      digest: true
+      digest_interval: 3600
+    llm_too_slow:
+      digest: true
+      digest_interval: 3600
+  alert_to_webhook_url:
+    llm_exceptions: &telegram_webhooks
+      - os.environ/TELEGRAM_WEBHOOK_PRIVATE
+      - os.environ/TELEGRAM_WEBHOOK_AUTOCAD
+      - os.environ/TELEGRAM_WEBHOOK_FENGSHUI
+    llm_too_slow: *telegram_webhooks
+    llm_requests_hanging: *telegram_webhooks
+    db_exceptions: *telegram_webhooks
+    outage_alerts: *telegram_webhooks
+    cooldown_deployment: *telegram_webhooks
+
+litellm_settings:
+  redact_messages_in_exceptions: true

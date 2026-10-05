@@ -1,0 +1,21 @@
+[Unit]
+Description=containerd runtime (infra)
+Documentation=https://containerd.io
+After=network.target __MOUNT_UNIT__
+Requires=__MOUNT_UNIT__
+
+[Service]
+ExecStartPre=/bin/mkdir -p /run/containerd-infra __INFRA_ROOT__/containerd
+ExecStart=/usr/bin/containerd --config /etc/containerd/config-infra.toml
+Type=notify
+Delegate=yes
+KillMode=process
+Restart=always
+RestartSec=5
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+OOMScoreAdjust=-999
+
+[Install]
+WantedBy=multi-user.target

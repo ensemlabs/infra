@@ -1,0 +1,8 @@
+disabled_plugins = ["cri"]
+root = "__INFRA_ROOT__/containerd"
+state = "/run/containerd-infra"
+
+[grpc]
+  address = "/run/containerd-infra/containerd.sock"
+  uid = 0
+  gid = 0

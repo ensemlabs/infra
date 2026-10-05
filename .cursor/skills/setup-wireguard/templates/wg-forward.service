@@ -1,0 +1,14 @@
+[Unit]
+Description=Publish VPS ports to home over WireGuard
+After=network-online.target docker.service wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/wg-forward reload
+ExecReload=/usr/local/sbin/wg-forward reload
+ExecStop=/usr/local/sbin/wg-forward flush
+
+[Install]
+WantedBy=multi-user.target

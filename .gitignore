@@ -1,0 +1,14 @@
+# Live host tree — deny by default. This directory also holds Docker data.
+/*
+!.gitignore
+!AGENTS.md
+!.cursor/
+
+# Belt: never commit secrets or volume data even if someone un-ignores a service dir
+**/.env
+**/.env.*
+!**/.env.example
+**/*.key
+**/data/
+docker/
+containerd/

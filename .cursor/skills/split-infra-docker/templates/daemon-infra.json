@@ -1,0 +1,28 @@
+{
+  "hosts": ["unix:///run/docker-infra.sock"],
+  "pidfile": "/run/docker-infra.pid",
+  "data-root": "__INFRA_ROOT__/docker",
+  "exec-root": "/run/docker-infra",
+  "group": "docker-infra",
+  "bridge": "dockerinfra0",
+  "default-address-pools": [
+    { "base": "172.31.0.0/16", "size": 24 }
+  ],
+  "iptables": false,
+  "ip-masq": false,
+  "ip-forward": true,
+  "userland-proxy": true,
+  "live-restore": true,
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "containerd": "/run/containerd-infra/containerd.sock",
+  "containerd-namespace": "infra",
+  "containerd-plugins-namespace": "infra-plugins",
+  "features": {
+    "containerd-snapshotter": true
+  },
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "3"
+  }
+}

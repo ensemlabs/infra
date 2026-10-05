@@ -1,0 +1,6 @@
+[Unit]
+Description=Check WireGuard tunnel to VPS
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wg-watchdog

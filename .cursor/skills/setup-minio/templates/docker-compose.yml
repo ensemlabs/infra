@@ -1,0 +1,89 @@
+name: minio
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  minio:
+    <<: *restart
+    image: cgr.dev/chainguard/minio:latest
+    container_name: minio
+    # Must match owner of ./data (ADMIN_UID:ADMIN_GID)
+    user: "${HOST_UID}:${HOST_GID}"
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: http://${PUBLIC_HOST}:${CONSOLE_PUBLIC_PORT}
+    volumes:
+      - ./data:/data
+    ports:
+      - "${BIND_ADDR}:9000:9000"
+      - "${BIND_ADDR}:9001:9001"
+      # Public via WireGuard: VPS 9100 -> 9000, 9101 -> 9001
+      - "${WG_ADDR}:9000:9000"
+      - "${WG_ADDR}:9001:9001"
+    networks: [infra]
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest-dev
+    container_name: minio-init
+    depends_on: [minio]
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      APP_BUCKET: ${APP_BUCKET}
+      CAD_BUCKET: ${CAD_BUCKET:-cad}
+      LANGFUSE_S3_ACCESS_KEY: ${LANGFUSE_S3_ACCESS_KEY}
+      LANGFUSE_S3_SECRET_KEY: ${LANGFUSE_S3_SECRET_KEY}
+      CAD_S3_ACCESS_KEY: ${CAD_S3_ACCESS_KEY}
+      CAD_S3_SECRET_KEY: ${CAD_S3_SECRET_KEY}
+    networks: [infra]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          echo "waiting for minio..."; sleep 2
+        done
+        mc mb --ignore-existing local/langfuse
+        mc mb --ignore-existing local/$${APP_BUCKET}
+        mc mb --ignore-existing local/$${CAD_BUCKET}
+        mc anonymous set none local/langfuse
+        mc anonymous set none local/$${APP_BUCKET}
+        mc anonymous set none local/$${CAD_BUCKET}
+        cat > /tmp/langfuse-rw.json <<'POLICY'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {"Effect": "Allow", "Action": ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"],
+             "Resource": ["arn:aws:s3:::langfuse"]},
+            {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+             "Resource": ["arn:aws:s3:::langfuse/*"]}
+          ]
+        }
+        POLICY
+        mc admin policy create local langfuse-rw /tmp/langfuse-rw.json
+        mc admin user add local "$$LANGFUSE_S3_ACCESS_KEY" "$$LANGFUSE_S3_SECRET_KEY"
+        mc admin policy attach local langfuse-rw --user "$$LANGFUSE_S3_ACCESS_KEY" 2>/dev/null || true
+        cat > /tmp/cad-rw.json <<'POLICY'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {"Effect": "Allow", "Action": ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"],
+             "Resource": ["arn:aws:s3:::cad"]},
+            {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+             "Resource": ["arn:aws:s3:::cad/*"]}
+          ]
+        }
+        POLICY
+        mc admin policy create local cad-rw /tmp/cad-rw.json
+        mc admin user add local "$$CAD_S3_ACCESS_KEY" "$$CAD_S3_SECRET_KEY"
+        mc admin policy attach local cad-rw --user "$$CAD_S3_ACCESS_KEY" 2>/dev/null || true
+        echo "buckets + langfuse/cad users ready"
+
+networks:
+  infra:
+    external: true
+    name: infra
