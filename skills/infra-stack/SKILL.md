@@ -11,7 +11,8 @@ description: >-
 # Infra stack (orchestrator)
 
 Do **not** invent a new topology. Apply the sibling skills in order. Skill
-root = `/mnt/d/infra/.cursor/skills`.
+pack root = the directory that contains these sibling skill folders
+(`skills/` in the repo; `~/.cursor/skills/` after personal install).
 
 ## Topology (this fleet)
 

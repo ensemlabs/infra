@@ -2,7 +2,9 @@
 /*
 !.gitignore
 !AGENTS.md
-!.cursor/
+!README.md
+!skills/
+!scripts/
 
 # Belt: never commit secrets or volume data even if someone un-ignores a service dir
 **/.env
@@ -12,3 +14,4 @@
 **/data/
 docker/
 containerd/
+.cursor/

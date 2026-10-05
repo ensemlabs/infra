@@ -1,10 +1,12 @@
 # AGENTS.md
 
 This directory on a live host is `$INFRA_ROOT` (default `/mnt/d/infra`): bind-mount
-data, two Docker daemons, and the skill pack that rebuilds the stack.
+data and two Docker daemons. The GitHub repo is the playbook only (`skills/`,
+`README.md`, this file). It must never contain `.env`, WireGuard private keys,
+Docker image stores, or `*/data/`.
 
-The GitHub repo is **only** the playbook. It must never contain `.env`, WireGuard
-private keys, Docker image stores, or `*/data/`.
+Skills are **not** loaded from this repo until installed. See `README.md`
+(`./scripts/install-skills.sh` → `~/.cursor/skills/`).
 
 ## What this stack is
 
@@ -36,12 +38,12 @@ Public map (VPS → home), `/etc/wg-forward.conf`:
 
 | Skill | Path | Does |
 |-------|------|------|
-| Orchestrator | `.cursor/skills/infra-stack/SKILL.md` | Order, shared `site.env`, hard rules |
-| Two dockerd | `.cursor/skills/split-infra-docker/SKILL.md` | `docker` vs `docker-infra`, fstab, units |
-| Tunnel | `.cursor/skills/setup-wireguard/SKILL.md` | Home + VPS + `wg-forward` + watchdog |
-| Object store | `.cursor/skills/setup-minio/SKILL.md` | Buckets + per-app keys |
-| Tracing | `.cursor/skills/setup-langfuse/SKILL.md` | Own Postgres/Redis/ClickHouse |
-| LLM gateway | `.cursor/skills/setup-litellm/SKILL.md` | Own Postgres, `/ui`, Langfuse traces |
+| Orchestrator | `skills/infra-stack/SKILL.md` | Order, shared `site.env`, hard rules |
+| Two dockerd | `skills/split-infra-docker/SKILL.md` | `docker` vs `docker-infra`, fstab, units |
+| Tunnel | `skills/setup-wireguard/SKILL.md` | Home + VPS + `wg-forward` + watchdog |
+| Object store | `skills/setup-minio/SKILL.md` | Buckets + per-app keys |
+| Tracing | `skills/setup-langfuse/SKILL.md` | Own Postgres/Redis/ClickHouse |
+| LLM gateway | `skills/setup-litellm/SKILL.md` | Own Postgres, `/ui`, Langfuse traces |
 
 Apply order: **docker split → WireGuard → MinIO → Langfuse → LiteLLM**.
 
@@ -91,9 +93,11 @@ Generate with `openssl rand`; never copy live values into git.
 
 This repo is deny-by-default (`.gitignore` ignores the live tree). Only add:
 
-- `AGENTS.md`
-- `.cursor/skills/**`
+- `AGENTS.md`, `README.md`
+- `skills/**`, `scripts/**`
 - `.gitignore`
+
+Do not add `.cursor/` to git.
 
 If asked to commit: refuse `.env`, `*.key`, `wg0.conf` with private keys, `docker/`,
 `containerd/`, and any `data/` directory.
