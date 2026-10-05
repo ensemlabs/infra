@@ -1,16 +1,57 @@
-# COCOTECH infra playbook
+# Infra
 
-Hướng dẫn dựng lại stack infra nhà: **hai Docker daemon**, **WireGuard qua VPS**, rồi **MinIO → Langfuse → LiteLLM**.
+Playbook for rebuilding the home infrastructure stack: two Docker daemons,
+a WireGuard path through a VPS, then MinIO, Langfuse, and LiteLLM.
 
-Repo này chỉ chứa playbook (skill + template). Không chứa `.env`, private key, hay data Docker.
+This repository holds Cursor skills and config templates. It does not hold
+live `.env` files, WireGuard private keys, Docker image stores, or service
+data. On a running host the live tree is `$INFRA_ROOT` (default `/mnt/d/infra`,
+mode `700`). The git checkout and the live tree may share that directory;
+`.gitignore` keeps volumes and secrets out of commits.
 
-Trên máy đang chạy, cây live mặc định là `/mnt/d/infra` (chmod 700). Repo GitHub và cây live có thể cùng một thư mục — `.gitignore` chặn data/secret.
+## Architecture
 
-## Cài skill vào Cursor
+```text
+Internet
+   │
+   ▼
+VPS  PUBLIC_HOST
+     WireGuard 10.66.0.1   UDP 51820
+     wg-forward DNAT (no MASQUERADE)
+   │
+   ▼
+Home wg0  10.66.0.2
+     docker.service         DEV    /run/docker.sock        group docker
+     docker-infra.service   INFRA  /run/docker-infra.sock  group docker-infra
+          network infra
+          ├── minio      127.0.0.1 + 10.66.0.2 :9000 / :9001
+          ├── langfuse   127.0.0.1 + 10.66.0.2 :3000
+          └── litellm    127.0.0.1 + 10.66.0.2 :4000
+```
 
-Skill **không** nằm trong `.cursor/skills` của repo. Phải copy vào chỗ Cursor đọc.
+Public port map on the VPS (`/etc/wg-forward.conf`):
 
-### Cách 1 — mọi project (khuyên dùng)
+| VPS | Home | Service |
+| --- | --- | --- |
+| tcp 2222 | 2486 | Home SSH |
+| tcp 9100 | 9000 | MinIO S3 API |
+| tcp 9101 | 9001 | MinIO console |
+| tcp 3100 | 3000 | Langfuse |
+| tcp 4000 | 4000 | LiteLLM |
+
+## Prerequisites
+
+- Linux host with systemd, Docker, and a data disk mounted at `/mnt/d` (or the path you set in `site.env`)
+- A VPS you can SSH to as root, with password login left enabled
+- `wireguard-tools`, `iptables`, and `nft` on both ends of the tunnel
+- Cursor, if you want the agent to apply the skills
+
+## Install the skills
+
+Cursor loads skills from `~/.cursor/skills/` or from a project's `.cursor/skills/`.
+Files under `skills/` in this repository are the source pack; they are not active until installed.
+
+Personal install (available in every project):
 
 ```bash
 git clone git@github.com:COCOTECH-Labs/infra.git
@@ -18,63 +59,80 @@ cd infra
 ./scripts/install-skills.sh
 ```
 
-Copy 6 skill vào `~/.cursor/skills/`. Mở lại cửa sổ Cursor.
-
-### Cách 2 — chỉ một repo
+Project install (available only in that repository):
 
 ```bash
 ./scripts/install-skills.sh --project /path/to/your-repo
 ```
 
-Copy vào `/path/to/your-repo/.cursor/skills/`. Đừng commit thư mục đó nếu repo kia không phải playbook.
-
-### Cách 3 — copy tay
+Manual copy:
 
 ```bash
 mkdir -p ~/.cursor/skills
 cp -a skills/* ~/.cursor/skills/
 ```
 
-Không copy vào `~/.cursor/skills-cursor/` — đó là skill built-in của Cursor.
+Leave `~/.cursor/skills-cursor/` alone. That directory is reserved for Cursor's built-in skills.
 
-Sau khi cài, bảo agent: **apply infra-stack**. Agent sẽ đọc lần lượt các skill con.
+Reload the Cursor window after install. Then ask the agent to apply `infra-stack`.
+It reads the child skills in order, copies templates, fills `site.env`, and
+generates new secrets on a new host.
 
-## Sáu skill
+## Skills
 
-| Skill | Việc |
-|--------|------|
-| `infra-stack` | Bản đồ, `site.env`, thứ tự, rule cứng |
-| `split-infra-docker` | Tách `docker` (DEV) và `docker-infra` (INFRA) |
-| `setup-wireguard` | Home `10.66.0.2` ↔ VPS `10.66.0.1`, `wg-forward` |
-| `setup-minio` | S3, bucket, access key theo app |
-| `setup-langfuse` | Tracing, Postgres/Redis/ClickHouse riêng |
-| `setup-litellm` | LLM proxy, `/ui`, trace sang Langfuse |
+Apply them in this order: **docker split → WireGuard → MinIO → Langfuse → LiteLLM**.
 
-Thứ tự: **docker split → WireGuard → MinIO → Langfuse → LiteLLM**.
+| Skill | Role |
+| --- | --- |
+| [`infra-stack`](skills/infra-stack/SKILL.md) | Order, shared `site.env`, hard rules |
+| [`split-infra-docker`](skills/split-infra-docker/SKILL.md) | `docker` (DEV) and `docker-infra` (INFRA) |
+| [`setup-wireguard`](skills/setup-wireguard/SKILL.md) | Home `10.66.0.2` to VPS `10.66.0.1`, `wg-forward` |
+| [`setup-minio`](skills/setup-minio/SKILL.md) | Private buckets and per-app access keys |
+| [`setup-langfuse`](skills/setup-langfuse/SKILL.md) | Tracing, with its own Postgres, Redis, and ClickHouse |
+| [`setup-litellm`](skills/setup-litellm/SKILL.md) | LLM proxy, `/ui`, traces to Langfuse |
 
-Template đi kèm từng skill (`skills/<tên>/templates/`). Agent copy template, điền `site.env`, sinh secret mới — không bịa topology.
+Each skill ships templates under `skills/<name>/templates/`.
 
-## Topology
+## Day-to-day commands
 
+On the home host:
+
+```bash
+docker ps                  # DEV daemon
+docker-infra ps            # INFRA daemon
+sudo systemctl start minio-infra langfuse-infra litellm-infra
+sudo /usr/local/sbin/backup-infra.sh /path/to/dest
 ```
-Internet → VPS
-            WireGuard 10.66.0.1  UDP 51820
-            DNAT, không MASQUERADE
-                 ↓
-Home wg0 10.66.0.2
-  docker            DEV    /run/docker.sock
-  docker-infra      INFRA  /run/docker-infra.sock
-       minio :9000/:9001   langfuse :3000   litellm :4000
+
+On the VPS (`ssh vps`, root, key `~/.ssh/id_ed25519_vps_admin`, port 22):
+
+```bash
+sudo wg-forward {reload|list|flush}
 ```
 
-Cổng public trên VPS: `2222→2486` (SSH nhà), `9100→9000`, `9101→9001`, `3100→3000`, `4000→4000`.
+## Rules
 
-## Rule cứng
+- Run two `dockerd` processes. Two sockets on one daemon is the wrong layout.
+- Leave `docker.service` running. Restart `docker-infra` when the infra daemon must restart.
+- Keep password SSH enabled on the VPS.
+- Forward with DNAT only. Home must see the real client IP (`connmark 0x66`, routing table `51820`, `Table = off`).
+- Start MinIO before Langfuse, and Langfuse before LiteLLM.
+- Use bind mounts. Langfuse and LiteLLM each have their own Postgres.
+- On Docker 29, pre-create bridge `dockerinfra0`. Do not set both `bridge` and `bip`.
+- Point the infra daemon at its own containerd socket, `/run/containerd-infra/containerd.sock`.
+- Generate secrets with `openssl rand`. Keep `LANGFUSE_S3_*` identical in MinIO and Langfuse, and copy the Langfuse project keys into LiteLLM.
+- Leave `LITELLM_SALT_KEY` and Langfuse `ENCRYPTION_KEY` unchanged after the first start.
 
-- Hai process `dockerd`. Không gắn hai socket vào một daemon.
-- Không `systemctl restart docker` (daemon DEV).
-- Không tắt password SSH trên VPS.
-- Không MASQUERADE forward WireGuard.
-- Không commit `.env`, `*.key`, `docker/`, `containerd/`, `*/data/`.
+## Repository layout
 
-Chi tiết cho agent: [AGENTS.md](AGENTS.md).
+```text
+AGENTS.md                  instructions for the agent
+README.md                  this file
+scripts/install-skills.sh  copy skills into Cursor
+skills/<name>/SKILL.md     one skill
+skills/<name>/templates/   compose, systemd, WireGuard, env examples
+```
+
+Tracked paths are `AGENTS.md`, `README.md`, `skills/`, `scripts/`, and `.gitignore`. Service data, `.env`, private keys, `docker/`, and `containerd/` stay local.
+
+Agent-facing detail is in [AGENTS.md](AGENTS.md).
